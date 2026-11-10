@@ -51,7 +51,7 @@ input[type=range]{accent-color:var(--accent);width:110px}
 </div>
 <script>
 (function(){
-  var canvas=document.getElementById('stage'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+  var canvas=document.getElementById('stage'),ctx=canvas.getContext('2d'),wk=document.createElement('canvas'),wctx=wk.getContext('2d',{willReadFrequently:true});
   var video=document.createElement('video');video.playsInline=true;video.muted=true;
   var gate=document.getElementById('gate'),bar=document.getElementById('bar'),hud=document.getElementById('hud'),err=document.getElementById('err');
   var mode='day',cell=9,facing='user',stream=null,sw=0,sh=0,prev=null,flies=[];
@@ -69,23 +69,54 @@ input[type=range]{accent-color:var(--accent);width:110px}
 
   function resize(){
     sw=Math.max(16,Math.ceil(window.innerWidth/cell));sh=Math.max(16,Math.ceil(window.innerHeight/cell));
-    canvas.width=sw;canvas.height=sh;prev=null;
+    canvas.width=wk.width=sw;canvas.height=wk.height=sh;prev=null;
     flies=[];for(var i=0;i<28;i++)flies.push({x:Math.random()*sw,y:Math.random()*sh,vx:(Math.random()-.5)*.12,vy:(Math.random()-.5)*.12,ph:Math.random()*6.28});
   }
   function clamp(v){return v<0?0:v>255?255:v}
   function hash(x,y){return(((x*73856093)^(y*19349663))>>>0)}
 
+  function mk(g,a){return{g:g,c:a}}
+  var RAMPS={
+    neu:mk(3,[[48,36,44],[96,76,72],[150,126,108],[208,184,148],[250,236,200]]),
+    red:mk(3,[[120,40,52],[164,58,58],[214,96,80],[232,140,158]]),
+    skin:mk(3,[[150,84,70],[196,120,90],[226,156,118],[246,200,160]]),
+    earth:mk(2,[[52,34,30],[88,58,40],[132,90,58],[178,130,84],[214,172,118]]),
+    gold:mk(3,[[120,84,40],[188,140,56],[232,192,74],[250,226,130]]),
+    grass:mk(0,[[38,70,46],[63,104,52],[95,142,60],[140,180,78],[184,210,104]]),
+    water:mk(1,[[34,74,112],[62,120,164],[110,170,208],[170,215,232]]),
+    purple:mk(3,[[58,44,78],[96,74,120],[150,110,160],[200,160,190]])
+  };
+  // every pixel is mapped into a warm cozy colour ramp by hue; brightness picks the shade
+  function ramp(r,g,b,L){
+    var mx=Math.max(r,g,b),mn=Math.min(r,g,b),dd=mx-mn,s=mx?dd/mx:0,h=0;
+    if(dd>0){if(mx===r)h=((g-b)/dd)%6;else if(mx===g)h=(b-r)/dd+2;else h=(r-g)/dd+4;h*=60;if(h<0)h+=360}
+    var R;
+    if(s<.16)R=RAMPS.neu;
+    else if(h<18||h>=340)R=RAMPS.red;
+    else if(h<38)R=(s<.55&&mx>110)?RAMPS.skin:RAMPS.earth;
+    else if(h<65)R=RAMPS.gold;
+    else if(h<170)R=RAMPS.grass;
+    else if(h<255)R=RAMPS.water;
+    else R=RAMPS.purple;
+    var t=(L-45)*1.4/255;t=t<0?0:t>1?1:t;
+    var c=R.c[Math.round(t*(R.c.length-1))];
+    return[c[0],c[1],c[2],R.g];
+  }
+
   function draw(){
     requestAnimationFrame(draw);
+    try{frame()}catch(e){prev=null}
+  }
+  function frame(){
     if(video.readyState<2||!video.videoWidth)return;
     var t=performance.now()/1000,vw=video.videoWidth,vh=video.videoHeight;
     var ca=sw/sh,va=vw/vh,sx=0,sy=0,sWid=vw,sHei=vh;
     if(va>ca){sWid=vh*ca;sx=(vw-sWid)/2}else{sHei=vw/ca;sy=(vh-sHei)/2}
-    ctx.save();
-    if(facing==='user'){ctx.translate(sw,0);ctx.scale(-1,1)}
-    ctx.drawImage(video,sx,sy,sWid,sHei,0,0,sw,sh);
-    ctx.restore();
-    var img=ctx.getImageData(0,0,sw,sh),d=img.data,n=sw*sh,i,p,G=GRADE[mode],night=mode==='night';
+    wctx.save();
+    if(facing==='user'){wctx.translate(sw,0);wctx.scale(-1,1)}
+    wctx.drawImage(video,sx,sy,sWid,sHei,0,0,sw,sh);
+    wctx.restore();
+    var img=wctx.getImageData(0,0,sw,sh),d=img.data,n=sw*sh,i,p,G=GRADE[mode],night=mode==='night';
     if(!prev){prev=new Float32Array(d.length);for(i=0;i<d.length;i++)prev[i]=d[i]}
     var lum=new Float32Array(n);
     // 1) smooth over time, then colour-grade
@@ -103,20 +134,15 @@ input[type=range]{accent-color:var(--accent);width:110px}
       p=i*4;var x=i%sw,y=(i/sw)|0;
       var edge=Math.abs(lum[i]-(x<sw-1?lum[i+1]:lum[i]))+Math.abs(lum[i]-(i+sw<n?lum[i+sw]:lum[i]));
       var cr,cg,cb,grp=3;
-      if(edge>36){cr=night?24:42;cg=night?20:28;cb=night?36:34}
+      if(edge>46){cr=night?24:42;cg=night?20:28;cb=night?36:34}
       else{
-        var dt=(BAYER[(y&3)*4+(x&3)]/16-.5)*30,
-            R=d[p]+dt,Gc=d[p+1]+dt,B=d[p+2]+dt,best=1e12,bi=0;
-        for(var j=0;j<PAL.length;j++){
-          var c=PAL[j],dr=R-c[0],dg=Gc-c[1],db=B-c[2],e=2*dr*dr+4*dg*dg+3*db*db;
-          if(e<best){best=e;bi=j}
-        }
-        var q=PAL[bi];cr=q[0];cg=q[1];cb=q[2];grp=q[3];
+        var dt=(BAYER[(y&3)*4+(x&3)]/16-.5)*34,q=ramp(d[p],d[p+1],d[p+2],lum[i]+dt);
+        cr=q[0];cg=q[1];cb=q[2];grp=q[3];
         var h=hash(x,y);
         if(grp===0){
           var m=h%13;
           if(m===0){cr+=34;cg+=38;cb+=14}else if(m===1){cr-=26;cg-=28;cb-=14}
-          if(h%101===7){var f=FLOWERS[(h>>8)%3];cr=f[0];cg=f[1];cb=f[2]}
+          if(h%101===7){var f=FLOWERS[(h>>>8)%3];cr=f[0];cg=f[1];cb=f[2]}
         }else if(grp===1){
           if(((x+y*2+Math.floor(t*3))%11)===0){cr+=40;cg+=40;cb+=34}
         }else if(grp===2&&h%9===0){cr-=18;cg-=16;cb-=14}
