@@ -33,7 +33,7 @@ input[type=range]{accent-color:var(--accent);width:110px}
 <body>
 <canvas id="stage"></canvas>
 <div id="vig"></div>
-<div id="hud" class="panel hide"><b id="season">Spring 12</b><br><span id="clock">6:00 am</span></div>
+<div id="hud" class="panel hide"><b id="season">Spring 12</b><br><span id="clock">6:00 am</span><br><small>v7 cozy</small></div>
 <div id="bar" class="hide">
   <div class="group" role="group" aria-label="Time of day">
     <button data-mode="day" aria-pressed="true">Day</button>
@@ -138,35 +138,11 @@ input[type=range]{accent-color:var(--accent);width:110px}
       else{
         var dt=(BAYER[(y&3)*4+(x&3)]/16-.5)*34,q=ramp(d[p],d[p+1],d[p+2],lum[i]+dt);
         cr=q[0];cg=q[1];cb=q[2];grp=q[3];
-        var h=hash(x,y);
-        if(grp===0){
-          var m=h%13;
-          if(m===0){cr+=34;cg+=38;cb+=14}else if(m===1){cr-=26;cg-=28;cb-=14}
-          if(h%101===7){var f=FLOWERS[(h>>>8)%3];cr=f[0];cg=f[1];cb=f[2]}
-        }else if(grp===1){
-          if(((x+y*2+Math.floor(t*3))%11)===0){cr+=40;cg+=40;cb+=34}
-        }else if(grp===2&&h%9===0){cr-=18;cg-=16;cb-=14}
-        if(night&&grp!==3){cr*=.9;cb=Math.min(255,cb*1.08)}
-      }
+              }
       d[p]=clamp(cr);d[p+1]=clamp(cg);d[p+2]=clamp(cb);d[p+3]=255;
     }
     ctx.putImageData(img,0,0);
-    // 3) fireflies / pollen
-    var count=night?28:(mode==='sunset'?14:8);
-    for(i=0;i<count;i++){
-      var f2=flies[i];if(!f2)continue;
-      f2.x+=f2.vx+Math.sin(t+f2.ph)*.04;f2.y+=f2.vy+Math.cos(t*.8+f2.ph)*.04;
-      if(f2.x<0)f2.x=sw;if(f2.x>sw)f2.x=0;if(f2.y<0)f2.y=sh;if(f2.y>sh)f2.y=0;
-      var pulse=(Math.sin(t*2+f2.ph*3)+1)/2,fx=Math.floor(f2.x),fy=Math.floor(f2.y);
-      if(night){
-        ctx.fillStyle='rgba(255,220,110,'+(.15+.25*pulse)+')';
-        ctx.fillRect(fx-1,fy,3,1);ctx.fillRect(fx,fy-1,1,3);
-        ctx.fillStyle='rgba(255,248,170,'+(.6+.4*pulse)+')';ctx.fillRect(fx,fy,1,1);
-      }else{
-        ctx.fillStyle='rgba(255,246,200,'+(.35+.4*pulse)+')';ctx.fillRect(fx,fy,1,1);
       }
-    }
-  }
 
   function updateClock(){
     var now=new Date(),h=now.getHours(),m=now.getMinutes(),ap=h>=12?'pm':'am';
